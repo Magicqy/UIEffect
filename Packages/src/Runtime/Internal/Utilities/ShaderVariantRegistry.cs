@@ -265,30 +265,62 @@ namespace Coffee.UIEffectInternal
         {
             var settings = owner as PreloadedProjectSettings;
             var needsDirectRef = settings && settings.excludeFromPreloadedAssetsWhenBuildPlayer;
-
-            if (!needsDirectRef || !m_Asset)
+            var shaderReferences = new List<Shader>();
+            if (needsDirectRef && m_Asset)
             {
-                if (m_RegisteredShaders.Count > 0)
+                var so = new SerializedObject(m_Asset);
+                var shaders = so.FindProperty("m_Shaders");
+                for (var i = 0; i < shaders.arraySize; i++)
                 {
-                    m_RegisteredShaders.Clear();
-                    EditorUtility.SetDirty(owner);
+                    var shaderRef = shaders.GetArrayElementAtIndex(i)
+                        .FindPropertyRelative("first")
+                        .objectReferenceValue as Shader;
+                    if (shaderRef)
+                        shaderReferences.Add(shaderRef);
                 }
-                return;
             }
 
-            var so = new SerializedObject(m_Asset);
-            var shaders = so.FindProperty("m_Shaders");
-            m_RegisteredShaders.Clear();
-            for (var i = 0; i < shaders.arraySize; i++)
+            SynchronizeRegisteredShaders(owner, m_RegisteredShaders, shaderReferences);
+        }
+
+        internal static bool SynchronizeRegisteredShaders(Object owner, List<Shader> registeredShaders,
+            IList<Shader> shaderReferences)
+        {
+            var uniqueShaders = new HashSet<Shader>();
+            var targetShaders = new List<Shader>(shaderReferences.Count);
+            for (var i = 0; i < shaderReferences.Count; i++)
             {
-                var shaderRef = shaders.GetArrayElementAtIndex(i)
-                    .FindPropertyRelative("first")
-                    .objectReferenceValue as Shader;
-                if (shaderRef && !m_RegisteredShaders.Contains(shaderRef))
-                    m_RegisteredShaders.Add(shaderRef);
+                var shader = shaderReferences[i];
+                if (shader && uniqueShaders.Add(shader))
+                    targetShaders.Add(shader);
             }
 
-            EditorUtility.SetDirty(owner);
+            if (registeredShaders.Count == targetShaders.Count)
+            {
+                var registeredSet = new HashSet<Shader>(registeredShaders);
+                if (registeredSet.Count == registeredShaders.Count && registeredSet.SetEquals(targetShaders))
+                    return false;
+            }
+
+            targetShaders.Sort((left, right) =>
+                string.CompareOrdinal(GetStableShaderKey(left), GetStableShaderKey(right)));
+            registeredShaders.Clear();
+            registeredShaders.AddRange(targetShaders);
+            if (owner)
+                EditorUtility.SetDirty(owner);
+            return true;
+        }
+
+        private static string GetStableShaderKey(Shader shader)
+        {
+            if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(shader, out var guid, out long localId)
+                && !string.IsNullOrEmpty(guid)
+                && guid != "0000000000000000f000000000000000")
+            {
+                return $"{guid}:{localId:D20}";
+            }
+
+            return shader.name;
         }
 
         internal void RegisterVariant(Material material, string path)

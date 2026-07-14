@@ -12,6 +12,7 @@ using UnityEngine.Timeline;
 
 [assembly: InternalsVisibleTo("UIEffect")]
 [assembly: InternalsVisibleTo("Coffee.UIEffect.Editor")]
+[assembly: InternalsVisibleTo("Coffee.UIEffect.EditorTests")]
 
 namespace Coffee.UIEffects
 {
